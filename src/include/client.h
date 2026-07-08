@@ -3,12 +3,19 @@
 
 #include <iostream>
 #include <utility>
+#include <vector>
+#include <string>
 
 extern int rows;         // The count of rows of the game map.
 extern int columns;      // The count of columns of the game map.
 extern int total_mines;  // The count of mines of the game map.
 
 // You MUST NOT use any other external variables except for rows, columns and total_mines.
+
+// Global state for the client
+int current_map[35][35]; // -1: unvisited, -2: marked, 0-8: mine count
+bool visited[35][35];
+bool marked[35][35];
 
 /**
  * @brief The definition of function Execute(int, int, bool)
@@ -34,9 +41,16 @@ void Execute(int r, int c, int type);
  * will read the scale of the game map and the first step taken by the server (see README).
  */
 void InitGame() {
-  // TODO (student): Initialize all your global variables!
+  // Initialize global variables
+  for(int i=0; i<35; ++i) {
+    for(int j=0; j<35; ++j) {
+      visited[i][j] = false;
+      marked[i][j] = false;
+      current_map[i][j] = -1;
+    }
+  }
   int first_row, first_column;
-  std::cin >> first_row >> first_column;
+  if (!(std::cin >> first_row >> first_column)) return;
   Execute(first_row, first_column, 0);
 }
 
@@ -44,27 +58,104 @@ void InitGame() {
  * @brief The definition of function ReadMap()
  *
  * @details This function is designed to read the game map from stdin when playing the client's (or player's) role.
- * Since the client (or player) can only get the limited information of the game map, so if there is a 3 * 3 map as
- * above and only the block (2, 0) has been visited, the stdin would be
- *     ???
- *     12?
- *     01?
  */
 void ReadMap() {
-  // TODO (student): Implement me!
+  for (int i = 0; i < rows; ++i) {
+    std::string line;
+    if (!(std::cin >> line)) break;
+    for (int j = 0; j < columns; ++j) {
+      char c = line[j];
+      if (c == '?') {
+        visited[i][j] = false;
+        marked[i][j] = false;
+        current_map[i][j] = -1;
+      } else if (c == '@') {
+        visited[i][j] = false;
+        marked[i][j] = true;
+        current_map[i][j] = -2;
+      } else if (c == 'X') {
+        // This could be a visited mine or a wrongly marked non-mine
+        visited[i][j] = true; 
+        marked[i][j] = false;
+        current_map[i][j] = 9; // Special value for mine
+      } else {
+        visited[i][j] = true;
+        marked[i][j] = false;
+        current_map[i][j] = c - '0';
+      }
+    }
+  }
 }
 
 /**
  * @brief The definition of function Decide()
  *
- * @details This function is designed to decide the next step when playing the client's (or player's) role. Open up your
- * mind and make your decision here! Caution: you can only execute once in this function.
+ * @details This function is designed to decide the next step when playing the client's (or player's) role.
  */
 void Decide() {
-  // TODO (student): Implement me!
-  // while (true) {
-  //   Execute(0, 0);
-  // }
+  // 1. Try to mark obvious mines
+  // If a visited non-mine grid has k unknown neighbors and its number is k, mark all neighbors as mines.
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      if (visited[r][c] && current_map[r][c] >= 0 && current_map[r][c] <= 8) {
+        int unvisited_neighbors = 0;
+        for (int dr = -1; dr <= 1; ++dr) {
+          for (int dc = -1; dc <= 1; ++dc) {
+            if (dr == 0 && dc == 0) continue;
+            int nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < columns && !visited[nr][nc] && !marked[nr][nc]) {
+              unvisited_neighbors++;
+            }
+          }
+        }
+        if (unvisited_neighbors > 0 && unvisited_neighbors == current_map[r][c]) {
+          for (int dr = -1; dr <= 1; ++dr) {
+            for (int dc = -1; dc <= 1; ++dc) {
+              if (dr == 0 && dc == 0) continue;
+              int nr = r + dr, nc = c + dc;
+              if (nr >= 0 && nr < rows && nc >= 0 && nc < columns && !visited[nr][nc] && !marked[nr][nc]) {
+                Execute(nr, nc, 1);
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Try to auto-explore safe grids
+  // If the number of marked mines around the target equals its mine count, all non-mine grids among the 8 surrounding grids are visited.
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      if (visited[r][c] && current_map[r][c] >= 0 && current_map[r][c] <= 8) {
+        int marked_neighbors = 0;
+        for (int dr = -1; dr <= 1; ++dr) {
+          for (int dc = -1; dc <= 1; ++dc) {
+            if (dr == 0 && dc == 0) continue;
+            int nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < columns && marked[nr][nc]) {
+              marked_neighbors++;
+            }
+          }
+        }
+        if (marked_neighbors == current_map[r][c]) {
+          Execute(r, c, 2);
+          return;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback: Visit a random unvisited/unmarked cell
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      if (!visited[r][c] && !marked[r][c]) {
+        Execute(r, c, 0);
+        return;
+      }
+    }
+  }
 }
 
 #endif
